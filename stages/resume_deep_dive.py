@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.types import interrupt, Command
 from llm import LLM
 from database import Database
 import asyncio
@@ -97,6 +98,9 @@ class ResumeDeepDiveState(BaseModel):
     weaknesses: list[str] = Field(default_factory=list),
     topics: list[str] = Field(default_factory=list),
     turn_count: int = Field(default=0),
+    question: str = Field(default=""),
+    answer: str = Field(default=""),
+    evaluation: dict = Field(default={}),
 
 class ResumeDeepDive:
     def __init__(self):
@@ -105,11 +109,15 @@ class ResumeDeepDive:
 
         resume_deep_dive = StateGraph(ResumeDeepDiveState)
         resume_deep_dive.add_node("generate_questions", self.generate_questions)
+        resume_deep_dive.add_node("get_answer", self.get_answer)
         resume_deep_dive.add_node("evaluate_answers", self.evaluate_answers)
+        resume_deep_dive.add_node("update_state", self.update_state)
 
         resume_deep_dive.add_edge(START, "generate_questions")
-        resume_deep_dive.add_edge("generate_questions", "evaluate_answers")
-        resume_deep_dive.add_conditional_edges("evaluate_answers", self.check_score, {
+        resume_deep_dive.add_edge("generate_questions", "get_answer")
+        resume_deep_dive.add_edge("get_answer", "evaluate_answers")
+        resume_deep_dive.add_edge("evaluate_answers", "update_state")
+        resume_deep_dive.add_conditional_edges("update_state", self.check_score, {
             "yes": "generate_questions",
             "no": END
         })
@@ -120,7 +128,7 @@ class ResumeDeepDive:
         print("Generating question...")
         print(state.turn_count)
         state.turn_count += 1
-        state.topic = state.topics[0]
+        state.topic = state.topics[random.randint(0, len(state.topics) - 1)]
         state.difficulty = random.randint(0, 10)
         messages = [
             SystemMessage(content=GENERATE_QUESTIONS_SYSTEM_PROMPT),
@@ -132,30 +140,57 @@ class ResumeDeepDive:
                 difficulty: {state.difficulty}
             """),
         ]
-        response = await self.llm.invoke(messages)
-        print(response)
-        return {"turn_count": state.turn_count}
+        question = await self.llm.invoke(messages)
+        print("Question: ", question["question"])
+        return {"turn_count": state.turn_count, "question": question["question"]}
+
+    def get_answer(self, state: ResumeDeepDiveState):
+        print("Getting answer...")
+        answer = input("Enter your answer: ")
+        return {"answer": answer}
 
     async def evaluate_answers(self, state: ResumeDeepDiveState):
         print("Evaluating answers...")
-        state.avg_score = random.randint(0, 100)
-        print("Average score: ", state.avg_score)
-        return {"avg_score": state.avg_score}
+        messages = [
+            SystemMessage(content=EVALUATE_ANSWERS_SYSTEM_PROMPT),
+            HumanMessage(content=f"""
+                Question: {state.question}
+                Answer: {state.answer}
+            """),
+        ]
+        evaluation = await self.llm.invoke(messages)
+        print("Evaluation: ", evaluation)
+
+        return {"evaluation": evaluation, "scores": state.scores + [evaluation["score"]]}
 
     async def run(self, state: ResumeDeepDiveState):
         state["turn_count"] = 0
         return await self.resume_deep_dive_workflow.ainvoke(state)
 
     def check_score(self, state: ResumeDeepDiveState):
-        if state.turn_count <= 5 or state.avg_score >= 50:
-            return "yes"
+        # if state.turn_count <= 5 or state.avg_score >= 50:
+        #     return "yes"
+        # else:
+        #     return "no"
+        return "no"
+
+    def update_state(self, state: ResumeDeepDiveState):
+        if state.evaluation['score'] < 60:
+            state.difficulty = 1
+            state.topics = state.user_summary['primary_domains'] + state.user_summary['core_technologies']
+        elif state.evaluation['score'] < 80:
+            state.difficulty = max(state.difficulty + 1, 10)
+            state.topics = state.evaluation.get('follow_up_topics', [])
         else:
-            return "no"
+            state.difficulty = max(state.difficulty + 2, 10)
+            state.topics = state.evaluation.get('follow_up_topics', [])
+
+        if state.turn_count >= 5:
+            state.avg_score = sum(state.scores) / state.turn_count
 
     async def get_user(self):
         state = {}
         self.user = await self.database.get_document("u111")
-        print(self.user)
         state["user_summary"] = self.user["candidate_summary"]
         state["projects"] = self.user["notable_projects"]
         state["strengths"] = self.user["strength_signals"]
