@@ -168,11 +168,10 @@ class ResumeDeepDive:
         return await self.resume_deep_dive_workflow.ainvoke(state)
 
     def check_score(self, state: ResumeDeepDiveState):
-        # if state.turn_count <= 5 or state.avg_score >= 50:
-        #     return "yes"
-        # else:
-        #     return "no"
-        return "no"
+        if state.turn_count <= 5 or state.avg_score >= 50:
+            return "yes"
+        else:
+            return "no"
 
     def update_state(self, state: ResumeDeepDiveState):
         if state.evaluation['score'] < 60:
