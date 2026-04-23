@@ -1,3 +1,4 @@
+import os
 from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
 from langchain_core.prompts import ChatPromptTemplate
 from utils import clean_response
@@ -8,7 +9,7 @@ load_dotenv()
 class LLM:
     def __init__(self):
         self.llm = HuggingFaceEndpoint(
-            repo_id="openai/gpt-oss-20b",
+            repo_id=os.getenv("HF_MODEL"),
             task="conversational",
             huggingfacehub_api_token=os.getenv("HF_TOKEN"),
             max_new_tokens=2000
