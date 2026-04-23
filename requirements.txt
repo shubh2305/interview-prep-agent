@@ -1,0 +1,7 @@
+langchain-huggingface 
+sentence_transformers 
+langchain 
+langchain-community 
+unstructured[pdf]
+pymongo
+langgraph
