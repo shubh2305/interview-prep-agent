@@ -1,8 +1,11 @@
 from pymongo import AsyncMongoClient
+from dotenv import load_dotenv
+load_dotenv()
+
 
 class Database:
     def __init__(self):
-        self.client = AsyncMongoClient("mongodb+srv://shubhamkarande0501:muLC53WFOWW2gF97@cluster0.cg7hghn.mongodb.net/")
+        self.client = AsyncMongoClient(os.getenv("MONGOD_URI"))
         self.db = self.client["expense-tracker"]
         self.collection = self.db["resume-vector-store"]
 
