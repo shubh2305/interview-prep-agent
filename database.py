@@ -1,5 +1,6 @@
 from pymongo import AsyncMongoClient
 from dotenv import load_dotenv
+import os
 load_dotenv()
 
 
@@ -9,12 +10,12 @@ class Database:
         self.db = self.client["expense-tracker"]
         self.collection = self.db["resume-vector-store"]
 
-    def insert_document(self, document):
-        self.collection.insert_one(document)
+    async def insert_document(self, document):
+        await self.collection.insert_one(document)
 
-    def get_document(self, document_id):
-        return self.collection.find_one({"user_id": document_id})
+    async def get_document(self, document_id):
+        return await self.collection.find_one({"user_id": document_id})
 
-    def update_document(self, document_id, document):
-        self.collection.update_one({"_id": document_id}, {"$set": document})
+    async def update_document(self, document_id, document):
+        await self.collection.update_one({"_id": document_id}, {"$set": document})
         

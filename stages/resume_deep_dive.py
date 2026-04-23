@@ -99,8 +99,7 @@ class ResumeDeepDiveState(BaseModel):
     turn_count: int = Field(default=0),
 
 class ResumeDeepDive:
-    def __init__(self, state: ResumeDeepDiveState):
-        self.state = state
+    def __init__(self):
         self.llm = LLM()
         self.database = Database()
 
@@ -109,18 +108,11 @@ class ResumeDeepDive:
         resume_deep_dive.add_node("evaluate_answers", self.evaluate_answers)
 
         resume_deep_dive.add_edge(START, "generate_questions")
-        resume_deep_dive.add_edge("generate_questions", END)
-        # resume_deep_dive.add_conditional_edges("evaluate_answers", self.check_score, {
-        #     "yes": "generate_questions",
-        #     "no": END
-        # })
-
-        self.user = self.database.get_document("u111")
-        print(self.user)
-        state.user_summary = self.user.candidate_summary
-        state.projects = self.user.projects
-        state.strengths = self.user.strength_signals
-        state.topics = self.user.primary_domains + self.user.core_technologies
+        resume_deep_dive.add_edge("generate_questions", "evaluate_answers")
+        resume_deep_dive.add_conditional_edges("evaluate_answers", self.check_score, {
+            "yes": "generate_questions",
+            "no": END
+        })
 
         self.resume_deep_dive_workflow = resume_deep_dive.compile()
 
@@ -128,23 +120,18 @@ class ResumeDeepDive:
         print("Generating question...")
         print(state.turn_count)
         state.turn_count += 1
-        generate_questions_prompt_template = ChatPromptTemplate.from_messages([
+        state.topic = state.topics[0]
+        state.difficulty = random.randint(0, 10)
+        messages = [
             SystemMessage(content=GENERATE_QUESTIONS_SYSTEM_PROMPT),
-            HumanMessage(content="""
-                User Summary: {user_summary}
-                Projects: {projects}
-                Strengths: {strengths}
-                topic: {topics}
-                difficulty: {difficulty}
+            HumanMessage(content=f"""
+                User Summary: {state.user_summary}
+                Projects: {state.projects}
+                Strengths: {state.strengths}
+                topic: {state.topic}
+                difficulty: {state.difficulty}
             """),
-        ])
-        messages = generate_questions_prompt_template.format_messages(
-            user_summary=state.user_summary,
-            projects=state.projects,
-            strengths=state.strengths,
-            topics=state.topics,
-            difficulty=state.difficulty
-        )
+        ]
         response = await self.llm.invoke(messages)
         print(response)
         return {"turn_count": state.turn_count}
@@ -155,8 +142,9 @@ class ResumeDeepDive:
         print("Average score: ", state.avg_score)
         return {"avg_score": state.avg_score}
 
-    async def run(self):
-        return await self.resume_deep_dive_workflow.ainvoke({"turn_count": 0})
+    async def run(self, state: ResumeDeepDiveState):
+        state["turn_count"] = 0
+        return await self.resume_deep_dive_workflow.ainvoke(state)
 
     def check_score(self, state: ResumeDeepDiveState):
         if state.turn_count <= 5 or state.avg_score >= 50:
@@ -164,4 +152,19 @@ class ResumeDeepDive:
         else:
             return "no"
 
-asyncio.run(ResumeDeepDive({}).run())
+    async def get_user(self):
+        state = {}
+        self.user = await self.database.get_document("u111")
+        print(self.user)
+        state["user_summary"] = self.user["candidate_summary"]
+        state["projects"] = self.user["notable_projects"]
+        state["strengths"] = self.user["strength_signals"]
+        state["topics"] = self.user["primary_domains"] + self.user["core_technologies"]
+        return state
+
+async def main():
+    resume_deep_dive = ResumeDeepDive()
+    state =await resume_deep_dive.get_user()
+    await resume_deep_dive.run(state)
+
+asyncio.run(main())
