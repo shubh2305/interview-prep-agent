@@ -168,6 +168,8 @@ class ResumeDeepDive:
         return await self.resume_deep_dive_workflow.ainvoke(state)
 
     def check_score(self, state: ResumeDeepDiveState):
+        if state.turn_count > 15:
+            return "no"
         if state.turn_count <= 5 or state.avg_score >= 50:
             return "yes"
         else:
@@ -183,6 +185,9 @@ class ResumeDeepDive:
         else:
             state.difficulty = max(state.difficulty + 2, 10)
             state.topics = state.evaluation.get('follow_up_topics', [])
+        
+        state.strengths = list(set(state.evaluation.get('strengths', []) + state.strengths))
+        state.weaknesses = list(set(state.evaluation.get('weaknesses', []) + state.weaknesses))
 
         if state.turn_count >= 5:
             state.avg_score = sum(state.scores) / state.turn_count
@@ -192,7 +197,6 @@ class ResumeDeepDive:
         self.user = await self.database.get_document("u111")
         state["user_summary"] = self.user["candidate_summary"]
         state["projects"] = self.user["notable_projects"]
-        state["strengths"] = self.user["strength_signals"]
         state["topics"] = self.user["primary_domains"] + self.user["core_technologies"]
         return state
 
